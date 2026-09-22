@@ -47,4 +47,4 @@ Windows PowerShell 可运行：
 
 ## 许可证
 
-项目许可证待补充。
+本项目采用 [MIT License](LICENSE) 开源。
