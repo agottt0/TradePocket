@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Rising candlestick-style glyph, centred in the 72dp safe zone. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,64h6v14h-6z M38,44h6v16h-6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52,52h6v26h-6z M52,32h6v16h-6z" />
+    <path
+        android:fillColor="#EB6834"
+        android:pathData="M66,40h6v38h-6z M66,24h6v12h-6z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,82h48v4h-48z" />
+</vector>
