@@ -199,6 +199,7 @@ private fun TradeLogApp(vm: AppViewModel) {
                     state = dashboard,
                     onOpenTrades = { tab = Tab.TRADES },
                     onOpenReturns = { tab = Tab.RETURNS },
+                    onRefreshFx = { vm.refreshFx() },
                 )
 
                 Tab.RETURNS -> ReturnsScreen(performance = performance)

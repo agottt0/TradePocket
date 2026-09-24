@@ -68,6 +68,9 @@ object Format {
 
     fun price(p: Double): String = String.format(Locale.US, "%,.3f", p)
 
+    /** An exchange rate: four decimals, enough for the big figure and the pips (7.0932, 0.1410). */
+    fun rate(value: Double): String = String.format(Locale.US, "%,.4f", value)
+
     /**
      * A rate as a signed percentage. [rate] is a fraction, so 0.1234 renders as "+12.3%".
      * Large rates drop the decimal, since "+1234.5%" reads as noise at that magnitude.

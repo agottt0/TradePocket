@@ -5,7 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tradelog.data.db.Side
 import com.tradelog.data.db.Trade
+import com.tradelog.data.fx.FxRepository
+import com.tradelog.data.fx.FxSnapshot
 import com.tradelog.data.perf.CurrencyPerformance
+import com.tradelog.data.perf.MonthlyTurnover
+import com.tradelog.data.perf.MonthlyTurnoverCalculator
 import com.tradelog.data.perf.PerformanceCalculator
 import com.tradelog.data.prefs.MailSettings
 import com.tradelog.data.prefs.SettingsStore
@@ -30,22 +34,65 @@ data class Appearance(
     val themeMode: ThemeMode = ThemeMode.DEFAULT,
 )
 
+/** Exchange rates as the UI sees them: the latest snapshot (possibly cached), plus fetch state. */
+data class FxState(
+    val snapshot: FxSnapshot? = null,
+    val loading: Boolean = false,
+    /** True when the last fetch failed. A stale [snapshot] may still be present. */
+    val failed: Boolean = false,
+)
+
 data class DashboardState(
     val tradeCount: Int = 0,
     val reviewCount: Int = 0,
     val recent: List<Trade> = emptyList(),
     val settings: MailSettings = MailSettings(),
-    /** One entry per currency. Never summed across entries — there are no exchange rates. */
+    /**
+     * One entry per currency. Profit is never summed across entries — converting a realized
+     * result at today's rate would misstate it. Only [monthly] turnover, which is current
+     * activity, is converted.
+     */
     val performance: List<CurrencyPerformance> = emptyList(),
+    /** This calendar month's buy+sell volume in HKD, at the current exchange rate. */
+    val monthly: MonthlyTurnover = MonthlyTurnover(0.0, 0.0, 0, false),
+    val fx: FxState = FxState(),
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = TradeRepository.get(app)
     private val store = SettingsStore.get(app)
+    private val fxRepo = FxRepository.get(app)
 
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
+
+    private val fxLoading = MutableStateFlow(false)
+    private val fxFailed = MutableStateFlow(false)
+
+    val fx: StateFlow<FxState> = combine(
+        fxRepo.snapshot,
+        fxLoading,
+        fxFailed,
+    ) { snapshot, loading, failed ->
+        FxState(snapshot = snapshot, loading = loading, failed = failed)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FxState())
+
+    init {
+        // Warm the rates on launch; throttled inside the repository, so this is usually a
+        // cache read. The card's refresh button calls refreshFx(force = true) instead.
+        refreshFx(force = false)
+    }
+
+    fun refreshFx(force: Boolean = true) {
+        if (fxLoading.value) return
+        fxLoading.value = true
+        viewModelScope.launch {
+            val result = fxRepo.refresh(force)
+            fxFailed.value = result == null
+            fxLoading.value = false
+        }
+    }
 
     private val messages = Channel<String>(Channel.BUFFERED)
     val toasts = messages.receiveAsFlow()
@@ -61,19 +108,33 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         .map { PerformanceCalculator.compute(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * The five-arity combine carries the original dashboard inputs; monthly turnover and the
+     * fx card ride in a second combine because they need the *full* trade list (turnover is a
+     * calendar-month sum, not the recent-8 slice) and the rates snapshot.
+     */
     val dashboard: StateFlow<DashboardState> = combine(
-        repo.observeCount(),
-        repo.observeReviewCount(),
-        repo.observeRecent(8),
-        repo.observeSettings(),
-        performance,
-    ) { count, review, recent, settings, perf ->
-        DashboardState(
-            tradeCount = count,
-            reviewCount = review,
-            recent = recent,
-            settings = settings,
-            performance = perf,
+        combine(
+            repo.observeCount(),
+            repo.observeReviewCount(),
+            repo.observeRecent(8),
+            repo.observeSettings(),
+            performance,
+        ) { count, review, recent, settings, perf ->
+            DashboardState(
+                tradeCount = count,
+                reviewCount = review,
+                recent = recent,
+                settings = settings,
+                performance = perf,
+            )
+        },
+        repo.observeTrades(),
+        fx,
+    ) { base, allTrades, fxState ->
+        base.copy(
+            monthly = MonthlyTurnoverCalculator.compute(allTrades, fxState.snapshot),
+            fx = fxState,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DashboardState())
 
